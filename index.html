@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>律动之藤：云端之诗</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Noto Serif SC', serif;
+            touch-action: none; /* Prevent zoom/scroll on mobile */
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        /* Enable pointer events for UI buttons */
+        #ui-layer button {
+            pointer-events: auto;
+        }
+
+        .hud-text {
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #start-screen, #game-over-screen, #loading-screen, #pause-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: auto;
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1 !important; 
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 1.2rem;
+            color: #2c3e50;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(142, 197, 252, 0.4);
+            transition: transform 0.1s, box-shadow 0.1s;
+            font-family: 'Noto Serif SC', serif;
+            margin: 10px;
+            min-width: 200px;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #cfd9df 0%, #e2ebf0 100%);
+            color: #555;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .pause-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+            backdrop-filter: blur(4px);
+            transition: background 0.2s;
+        }
+        
+        .pause-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #ffffff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .title-text {
+            background: linear-gradient(to right, #fff1eb 0%, #ace0f9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- UI Layer -->
+    <div id="ui-layer" class="hidden">
+        <div class="flex justify-between items-start w-full">
+            <div class="hud-text">
+                <div class="text-sm opacity-70">SCORE</div>
+                <div class="text-3xl font-bold" id="scoreDisplay">0</div>
+            </div>
+            
+            <!-- Pause Button -->
+            <button id="pauseBtn" class="pause-btn" aria-label="暂停">
+                ⏸
+            </button>
+
+            <div class="hud-text text-right">
+                <div class="text-sm opacity-70">PROGRESS</div>
+                <div class="text-xl font-bold" id="progressDisplay">0%</div>
+            </div>
+        </div>
+        <div id="shield-indicator" class="hud-text text-center opacity-0 transition-opacity duration-500">
+            <span class="text-blue-300 text-lg">💧 护盾激活</span>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader mb-4"></div>
+        <div class="text-white text-lg">正在加载乐章...</div>
+        <div id="loading-status" class="text-white text-xs opacity-50 mt-2">Connecting...</div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="hidden">
+        <h1 class="title-text">律动之藤<br><span class="text-xl font-normal opacity-80">云端之诗</span></h1>
+        <p class="text-white opacity-70 mb-8 text-center px-4 text-sm">
+            戴上耳机体验最佳效果<br>前奏时藤蔓将垂直生长<br>在光圈内点击转向<br>镜头将跟随你的舞步
+        </p>
+        <button class="btn" id="startBtn">开始生长</button>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="hidden">
+        <h2 class="text-white text-3xl mb-8 font-bold tracking-widest">暂停</h2>
+        <button class="btn" id="resumeBtn">继续</button>
+        <button class="btn btn-secondary" id="restartPauseBtn">重新开始</button>
+        <button class="btn btn-secondary" id="menuBtn">返回上级菜单</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="hidden">
+        <h2 class="text-white text-3xl mb-2 font-bold">生命轮回</h2>
+        <div class="text-blue-200 text-xl mb-6">最终得分: <span id="finalScore">0</span></div>
+        <div class="text-white text-sm opacity-60 mb-8 max-w-xs text-center" id="death-reason">
+            藤蔓回归了泥土...
+        </div>
+        <button class="btn" id="restartBtn">再次发芽</button>
+        <button class="btn btn-secondary" id="menuOverBtn">返回主菜单</button>
+    </div>
+
+    <!-- Audio Element (Hidden) -->
+    <audio id="bgm" preload="auto" crossorigin="anonymous">
+        <!-- Using the provided URL -->
+        <source src="https://lf-c11.dailygn.com/obj/lf-game-lf/gdl_app_477685/AIUpload/victor_-_4_Cover_20251210231745.mp3" type="audio/mpeg">
+    </audio>
+
+<script>
+/**
+ * RHYTHM VINE: POEM OF THE CLOUDS
+ * A single-file generative rhythm game.
+ */
+
+// --- Constants & Config ---
+const CONFIG = {
+    VINE_SPEED: 250, // Pixels per second vertical speed
+    VINE_WIDTH: 8, // Slightly thicker for better visibility
+    VINE_HEAD_RADIUS: 5, // Used for collision
+    BASE_PATH_WIDTH: 140, // Base visual width
+    MIN_PATH_WIDTH: 80,
+    MAX_PATH_WIDTH: 200,
+    LOOKAHEAD: 8, // Increased significantly to ensure path is drawn well ahead
+    TRANSITION_PCT: 0.08, // Phase transition duration (percentage of total song)
+    JSON_URL: 'https://lf-c11.dailygn.com/obj/lf-game-lf/gdl_app_477685/AIUpload/victor_-_4_Cover_6_20251210231704.json',
+    AUDIO_URL: 'https://lf-c11.dailygn.com/obj/lf-game-lf/gdl_app_477685/AIUpload/victor_-_4_Cover_20251210231745.mp3'
+};
+
+// --- Game State ---
+const STATE = {
+    LOADING: 0,
+    MENU: 1,
+    PLAYING: 2,
+    GAMEOVER: 3,
+    VICTORY: 4,
+    PAUSED: 5 // New State
+};
+
+let currentState = STATE.LOADING;
+let canvas, ctx;
+let width, height;
+let audio;
+let gameData = {
+    notes: [], // Array of {time: number}
+    totalDuration: 0
+};
+let lastTime = 0;
+let score = 0;
+let shieldActive = false;
+
+// Camera
+let cameraY = 0;
+let cameraX = 0;
+let cameraAngle = 0; // For rotation effect
+
+// The Vine
+let vine = {
+    points: [], // {x, y}
+    head: { x: 0, y: 0 },
+    dir: 0, // 0 for Vertical (Start), 1 for Right-Up, -1 for Left-Up
+    color: '#4ade80',
+    alive: true
+};
+
+// Procedural Path Generation
+let pathPoints = []; // The ideal path: {x, y, time, hasFlower, isWater, outboundDir, width}
+let nextNoteIndex = 0;
+
+// Visual Effects
+let particles = [];
+let flowers = [];
+let beatPulse = 1.0;
+
+// --- Helper Functions ---
+
+// Linear interpolation for values
+function lerp(start, end, t) {
+    return start * (1 - t) + end * t;
+}
+
+// Helper to interpolate Hex colors
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : { r: 0, g: 0, b: 0 };
+}
+
+function lerpColor(a, b, amount) {
+    const ar = hexToRgb(a), br = hexToRgb(b);
+    const rr = Math.round(ar.r + amount * (br.r - ar.r));
+    const rg = Math.round(ar.g + amount * (br.g - ar.g));
+    const rb = Math.round(ar.b + amount * (br.b - ar.b));
+    return `rgb(${rr}, ${rg}, ${rb})`;
+}
+
+// --- Initialization ---
+
+window.onload = async () => {
+    canvas = document.getElementById('gameCanvas');
+    ctx = canvas.getContext('2d');
+    audio = document.getElementById('bgm');
+
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Setup Inputs
+    document.getElementById('startBtn').addEventListener('click', startGame);
+    document.getElementById('restartBtn').addEventListener('click', resetGame);
+    document.getElementById('restartPauseBtn').addEventListener('click', () => {
+        togglePause(); // Unpause logic first to clear UI
+        resetGame();
+    });
+    
+    // Pause Logic
+    document.getElementById('pauseBtn').addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent triggering game input
+        togglePause();
+    });
+    document.getElementById('resumeBtn').addEventListener('click', togglePause);
+    document.getElementById('menuBtn').addEventListener('click', returnToMenu);
+    document.getElementById('menuOverBtn').addEventListener('click', returnToMenu);
+
+    // Game Controls
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Escape') {
+            if (currentState === STATE.PLAYING || currentState === STATE.PAUSED) {
+                togglePause();
+            }
+        } else if (e.code === 'Space') {
+            e.preventDefault(); 
+            if (currentState === STATE.PLAYING) handleInput();
+        }
+    });
+    
+    canvas.addEventListener('pointerdown', (e) => {
+        if (currentState === STATE.PLAYING) handleInput();
+    });
+
+    // Load Data
+    await loadAssets();
+};
+
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+}
+
+// --- Asset Loading & Data Parsing ---
+
+async function loadAssets() {
+    const statusEl = document.getElementById('loading-status');
+    
+    try {
+        // 1. Fetch JSON (Try/Catch for CORS)
+        statusEl.innerText = "正在加载乐谱...";
+        try {
+            const response = await fetch(CONFIG.JSON_URL);
+            if (!response.ok) throw new Error("Network response was not ok");
+            const rawData = await response.json();
+            
+            let notes = [];
+            if (Array.isArray(rawData)) {
+                notes = rawData.map(n => (n.time !== undefined ? n.time : n.t));
+            } else if (rawData.tracks) {
+                let allNotes = [];
+                rawData.tracks.forEach(t => {
+                    if (t.notes) allNotes = allNotes.concat(t.notes);
+                });
+                notes = allNotes.map(n => (n.time !== undefined ? n.time : n.t));
+            } else {
+                const keys = Object.keys(rawData);
+                for (let key of keys) {
+                    if (Array.isArray(rawData[key]) && rawData[key].length > 0 && rawData[key][0].time !== undefined) {
+                        notes = rawData[key].map(n => n.time);
+                        break;
+                    }
+                }
+            }
+            
+            if (notes.length > 0 && notes[0] > 100) {
+                 console.log("Detected milliseconds in JSON, converting to seconds.");
+                 notes = notes.map(t => t / 1000);
+            }
+            
+            notes.sort((a,b) => a-b);
+            gameData.notes = notes;
+            
+        } catch (err) {
+            console.warn("Error loading JSON, falling back to procedural.", err);
+            generateProceduralNotes();
+        }
+
+        // 2. Audio Check
+        statusEl.innerText = "准备就绪";
+        
+        audio.addEventListener('loadedmetadata', () => {
+             gameData.totalDuration = audio.duration;
+        });
+        
+        setTimeout(() => {
+             if(!gameData.totalDuration) gameData.totalDuration = 180;
+             
+             document.getElementById('loading-screen').classList.add('hidden');
+             document.getElementById('start-screen').classList.remove('hidden');
+             currentState = STATE.MENU;
+             
+             requestAnimationFrame(gameLoop);
+        }, 1000);
+
+    } catch (e) {
+        console.error(e);
+        statusEl.innerText = "Error loading resources.";
+    }
+}
+
+function generateProceduralNotes() {
+    gameData.notes = [];
+    for (let t = 2.0; t < 240; t += 0.6) {
+        if (Math.random() > 0.8) t += 0.3;
+        gameData.notes.push(t);
+    }
+}
+
+// --- Game Logic ---
+
+function startGame() {
+    if (audio.state === 'suspended') audio.resume();
+    
+    // Ensure we start from clean state
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('pause-screen').classList.add('hidden');
+    
+    audio.currentTime = 0;
+    audio.play().then(() => {
+        resetVariables();
+        currentState = STATE.PLAYING;
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('ui-layer').classList.remove('hidden');
+    }).catch(e => {
+        console.log("Audio play failed:", e);
+        // Retry logic for mobile or strict autoplay policies
+        alert("请点击确定开始游戏");
+        audio.play();
+        resetVariables();
+        currentState = STATE.PLAYING;
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('ui-layer').classList.remove('hidden');
+    });
+}
+
+function resetGame() {
+    document.getElementById('game-over-screen').classList.add('hidden');
+    startGame();
+}
+
+function togglePause() {
+    if (currentState === STATE.PLAYING) {
+        // Switch to Pause
+        currentState = STATE.PAUSED;
+        audio.pause();
+        document.getElementById('pause-screen').classList.remove('hidden');
+        // keep UI layer visible for context, or hide it if preferred
+        // document.getElementById('ui-layer').classList.add('hidden'); 
+    } else if (currentState === STATE.PAUSED) {
+        // Switch to Playing
+        document.getElementById('pause-screen').classList.add('hidden');
+        document.getElementById('ui-layer').classList.remove('hidden');
+        
+        audio.play();
+        currentState = STATE.PLAYING;
+        lastTime = performance.now(); // Reset delta time prevent jumps
+    }
+}
+
+function returnToMenu() {
+    // Stop Game
+    vine.alive = false;
+    audio.pause();
+    audio.currentTime = 0;
+    currentState = STATE.MENU;
+
+    // UI Cleanup
+    document.getElementById('pause-screen').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('ui-layer').classList.add('hidden');
+    document.getElementById('start-screen').classList.remove('hidden');
+}
+
+function resetVariables() {
+    score = 0;
+    shieldActive = false;
+    
+    vine.points = [];
+    vine.head = { x: 0, y: 0 }; 
+    vine.dir = 0; 
+    vine.alive = true;
+    
+    cameraY = 0;
+    cameraX = 0;
+    cameraAngle = 0;
+
+    nextNoteIndex = 0;
+    pathPoints = [];
+    particles = [];
+    flowers = [];
+    
+    generatePathSegment(0);
+    
+    lastTime = performance.now();
+    updateScoreUI();
+    document.getElementById('shield-indicator').style.opacity = '0';
+}
+
+function generatePathSegment(startTime) {
+    let lastP = pathPoints.length > 0 ? pathPoints[pathPoints.length-1] : { x: 0, y: 0, time: 0, outboundDir: 0, width: CONFIG.BASE_PATH_WIDTH };
+    
+    let startIndex = gameData.notes.findIndex(t => t > lastP.time);
+    if (startIndex === -1) return;
+    
+    // Increased lookahead generation end time
+    const END_GEN_TIME = startTime + CONFIG.LOOKAHEAD + 5; 
+    
+    for (let i = startIndex; i < gameData.notes.length; i++) {
+        let noteTime = gameData.notes[i];
+        if (noteTime > END_GEN_TIME) break;
+        
+        let dt = noteTime - lastP.time;
+        if (dt <= 0.01) continue;
+        
+        let dy = dt * CONFIG.VINE_SPEED;
+        let segmentDir = lastP.outboundDir;
+        
+        let nextX = lastP.x + (segmentDir * dy);
+        let outboundDir;
+        
+        if (segmentDir === 0) {
+            // Force first turn to RIGHT (1) to match player input
+            outboundDir = 1;
+        } else {
+            outboundDir = -segmentDir;
+        }
+
+        // Random Width Logic
+        let randWidth = CONFIG.MIN_PATH_WIDTH + Math.random() * (CONFIG.MAX_PATH_WIDTH - CONFIG.MIN_PATH_WIDTH);
+        
+        let p = {
+            x: nextX,
+            y: lastP.y + dy,
+            time: noteTime,
+            outboundDir: outboundDir,
+            hit: false,
+            width: randWidth, // Store width for this segment ending
+            type: Math.random() > 0.9 ? 'water' : 'flower'
+        };
+        pathPoints.push(p);
+        lastP = p;
+    }
+}
+
+function handleInput() {
+    if (vine.dir === 0) {
+        vine.dir = 1; 
+    } else {
+        vine.dir *= -1;
+    }
+    spawnParticles(vine.head.x, -vine.head.y, 5, '#fff');
+}
+
+// --- Main Loop ---
+
+function gameLoop(timestamp) {
+    let dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if (currentState === STATE.PLAYING) {
+        updateGame(dt);
+    }
+    // If paused, we still draw (but don't update physics) so the screen doesn't go blank
+    
+    draw(timestamp);
+    requestAnimationFrame(gameLoop);
+}
+
+function updateGame(dt) {
+    if (!vine.alive) return;
+    
+    const audioTime = audio.currentTime;
+    
+    // 1. Move Vine
+    let moveDist = CONFIG.VINE_SPEED * dt;
+    vine.head.y += moveDist;
+    vine.head.x += vine.dir * moveDist; 
+    
+    vine.points.push({x: vine.head.x, y: vine.head.y});
+    if (vine.points.length > 600) vine.points.shift(); 
+    
+    // 2. Camera Logic
+    let targetCameraY = vine.head.y - (height * 0.3);
+    cameraY += (targetCameraY - cameraY) * 0.1;
+    
+    let targetCameraX = vine.head.x;
+    cameraX += (targetCameraX - cameraX) * 0.1; 
+    
+    let targetAngle = -vine.dir * 0.05;
+    cameraAngle += (targetAngle - cameraAngle) * 0.05;
+    
+    // 3. Path Logic - Ensure Lookahead
+    if (pathPoints.length === 0 || pathPoints[pathPoints.length-1].time < audioTime + CONFIG.LOOKAHEAD) {
+        generatePathSegment(audioTime);
+    }
+    
+    let targetNode = pathPoints.find(p => !p.hit);
+    
+    if (targetNode) {
+        // Hit Detection
+        if (vine.head.y >= targetNode.y) {
+            // Check success conditions
+            // DYNAMIC TOLERANCE: Use visual width of this target node
+            // Tolerance = Radius of Path (width/2) + Radius of Vine Head (5)
+            // This ensures if the EDGE of the vine touches the EDGE of the path, it counts.
+            let tolerance = (targetNode.width / 2) + CONFIG.VINE_HEAD_RADIUS;
+            
+            let isHit = Math.abs(vine.head.x - targetNode.x) < tolerance;
+            
+            if (isHit) {
+                // SUCCESS
+                targetNode.hit = true;
+                score += 10;
+                beatPulse = 1.5;
+                handleNodeEffect(targetNode);
+                updateScoreUI();
+            } else {
+                // FAILURE - Check Shield
+                if (shieldActive) {
+                    shieldActive = false;
+                    document.getElementById('shield-indicator').style.opacity = '0';
+                    targetNode.hit = true;
+                    vine.head.x = targetNode.x;
+                    if (targetNode.outboundDir !== undefined) {
+                        vine.dir = targetNode.outboundDir;
+                    }
+                    spawnParticles(vine.head.x, -vine.head.y, 30, '#60a5fa'); 
+                    spawnParticles(vine.head.x, -vine.head.y, 20, '#fff'); 
+                    updateScoreUI();
+                } else {
+                    triggerGameOver("迷失在旋律之外");
+                }
+            }
+        }
+    }
+    
+    updateScoreUI();
+}
+
+function handleNodeEffect(targetNode) {
+    if (targetNode.type === 'flower') {
+        // Get current color state for the flower
+        const renderState = getRenderState(audio.currentTime);
+        const c1 = PHASES[renderState.current].flower;
+        const c2 = PHASES[renderState.next].flower;
+        const flowerColor = lerpColor(c1, c2, renderState.blend);
+
+        flowers.push({
+            x: targetNode.x, y: targetNode.y, 
+            scale: 0, opacity: 1, 
+            color: flowerColor 
+        });
+    } else if (targetNode.type === 'water') {
+        shieldActive = true;
+        document.getElementById('shield-indicator').style.opacity = '1';
+        spawnParticles(targetNode.x, -targetNode.y, 20, '#60a5fa');
+    }
+}
+
+function triggerGameOver(reason) {
+    vine.alive = false;
+    audio.pause();
+    document.getElementById('finalScore').innerText = score;
+    document.getElementById('death-reason').innerText = reason;
+    document.getElementById('game-over-screen').classList.remove('hidden');
+    document.getElementById('ui-layer').classList.add('hidden');
+}
+
+function updateScoreUI() {
+    const progress = Math.min(100, Math.floor((audio.currentTime / gameData.totalDuration) * 100));
+    document.getElementById('scoreDisplay').innerText = score;
+    document.getElementById('progressDisplay').innerText = progress + "%";
+}
+
+// --- Rendering ---
+
+// New function to calculate transition state
+function getRenderState(time) {
+    const total = gameData.totalDuration || 180;
+    const p = time / total;
+    const trans = CONFIG.TRANSITION_PCT; // Duration of transition window
+
+    // Phase Boundaries: 0 -> 0.25 -> 0.50 -> 0.75
+    // We start transition BEFORE the boundary
+    
+    let current = 0;
+    let next = 0;
+    let blend = 0;
+
+    if (p < 0.25) {
+        current = 0; 
+        if (p > 0.25 - trans) {
+            next = 1;
+            blend = (p - (0.25 - trans)) / trans;
+        } else {
+            next = 0;
+        }
+    } else if (p < 0.50) {
+        current = 1;
+        if (p > 0.50 - trans) {
+            next = 2;
+            blend = (p - (0.50 - trans)) / trans;
+        } else {
+            next = 1;
+        }
+    } else if (p < 0.75) {
+        current = 2;
+        if (p > 0.75 - trans) {
+            next = 3;
+            blend = (p - (0.75 - trans)) / trans;
+        } else {
+            next = 2;
+        }
+    } else {
+        current = 3;
+        next = 3;
+        blend = 0;
+    }
+
+    // Clamp blend
+    blend = Math.max(0, Math.min(1, blend));
+
+    return { current, next, blend };
+}
+
+const PHASES = [
+    { bg: ['#2d1b14', '#1a100c'], vine: '#4ade80', flower: '#fcd34d', name: '苏醒' }, 
+    { bg: ['#e0c3fc', '#8ec5fc'], vine: '#2c3e50', flower: '#ff7eb3', name: '攀登' }, 
+    { bg: ['#2c3e50', '#34495e'], vine: '#00d2ff', flower: '#ffffff', name: '雨季' }, 
+    { bg: ['#240b36', '#c31432'], vine: '#ffffff', flower: '#faff00', name: '云端' } 
+];
+
+function draw(timestamp) {
+    ctx.clearRect(0, 0, width, height);
+
+    // Calculate Phase & Interpolation
+    const rState = getRenderState(audio.currentTime);
+    const themeCurr = PHASES[rState.current];
+    const themeNext = PHASES[rState.next];
+    const blend = rState.blend;
+    
+    beatPulse += (1.0 - beatPulse) * 0.1;
+    
+    // 1. Background Gradient Interpolation
+    let bgTop = lerpColor(themeCurr.bg[0], themeNext.bg[0], blend);
+    let bgBot = lerpColor(themeCurr.bg[1], themeNext.bg[1], blend);
+
+    let grd = ctx.createLinearGradient(0, height, 0, 0);
+    grd.addColorStop(0, bgTop);
+    grd.addColorStop(1, bgBot);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, width, height);
+    
+    // 2. Camera Transform Setup
+    ctx.save();
+    
+    const cx = width / 2;
+    const cy = height * 0.7; 
+    
+    ctx.translate(cx, cy);
+    ctx.rotate(cameraAngle);
+    ctx.translate(-cx, -cy);
+    
+    ctx.translate(width/2 - cameraX, height + cameraY); 
+    
+    // Draw Background Decorations with Cross-fade
+    // Draw Current (Fade Out)
+    if (blend < 1.0) {
+        drawInfiniteBackground(rState.current, timestamp, cameraY, 1.0 - blend);
+    }
+    // Draw Next (Fade In)
+    if (blend > 0.0) {
+        drawInfiniteBackground(rState.next, timestamp, cameraY, blend);
+    }
+    
+    // Rain Effect (Phase 2 Specific)
+    // Rain should appear if current is 2 OR next is 2
+    let rainAlpha = 0;
+    if (rState.current === 2) rainAlpha += (1.0 - blend);
+    if (rState.next === 2) rainAlpha += blend;
+    
+    if (rainAlpha > 0.01) {
+        drawRain(timestamp, cameraY, cameraX, rainAlpha);
+    }
+    
+    // 3. Draw Path (Segment by Segment for Variable Width)
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    if (pathPoints.length > 0) {
+        let prev = pathPoints[0];
+        for (let i = 0; i < pathPoints.length; i++) {
+            let p = pathPoints[i];
+            
+            // Culling
+            if (p.y < cameraY - height - 500) {
+                prev = p;
+                continue;
+            }
+            if (p.y > cameraY + height + 2000) break;
+            
+            // Draw segment from prev to p
+            if (i > 0) {
+                ctx.beginPath();
+                ctx.moveTo(prev.x, -prev.y);
+                ctx.lineTo(p.x, -p.y);
+                
+                // VISUAL WIDTH MATCHES HITBOX
+                // Fixed: 使用起始点(prev)的宽度作为路径宽度，与用户描述一致
+                ctx.lineWidth = prev.width; 
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.stroke();
+            }
+            
+            prev = p;
+        }
+    }
+    
+    // Draw Nodes (RINGS)
+    pathPoints.forEach(p => {
+        if (p.y < cameraY - height - 500 || p.y > cameraY + height + 2000 || p.hit) return;
+        
+        // Draw the main Ring (Success Zone)
+        ctx.beginPath();
+        // Radius = width / 2. This visually represents the safe area.
+        ctx.arc(p.x, -p.y, p.width / 2, 0, Math.PI*2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.stroke();
+
+        // Draw the inner item
+        ctx.beginPath();
+        if (p.type === 'flower') {
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.arc(p.x, -p.y, 6 + Math.sin(timestamp/200)*2, 0, Math.PI*2);
+        } else {
+            ctx.fillStyle = '#60a5fa';
+            ctx.shadowColor = '#60a5fa';
+            ctx.shadowBlur = 10;
+            ctx.arc(p.x, -p.y, 8, 0, Math.PI*2);
+            ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+    });
+
+    // 4. Draw Vine
+    ctx.beginPath();
+    if (vine.points.length > 0) {
+        ctx.moveTo(vine.points[0].x, -vine.points[0].y);
+        for (let i = 1; i < vine.points.length; i++) {
+            // Optimization: Skip points far off screen
+            if (vine.points[i].y < cameraY - height - 200) continue;
+            ctx.lineTo(vine.points[i].x, -vine.points[i].y);
+        }
+        ctx.lineTo(vine.head.x, -vine.head.y);
+    }
+    
+    // Interpolate Vine Color
+    let vineColor = lerpColor(themeCurr.vine, themeNext.vine, blend);
+    
+    ctx.strokeStyle = shieldActive ? '#60a5fa' : vineColor;
+    ctx.lineWidth = CONFIG.VINE_WIDTH;
+    ctx.shadowBlur = shieldActive ? 20 : 10;
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Vine Head
+    ctx.beginPath();
+    ctx.fillStyle = '#fff';
+    ctx.arc(vine.head.x, -vine.head.y, CONFIG.VINE_HEAD_RADIUS, 0, Math.PI*2);
+    ctx.fill();
+    
+    // 5. Effects
+    flowers.forEach((f, index) => {
+        f.scale += (1.5 - f.scale) * 0.1;
+        f.opacity -= 0.01;
+        if (f.opacity <= 0) {
+            flowers.splice(index, 1);
+            return;
+        }
+        ctx.save();
+        ctx.translate(f.x, -f.y);
+        ctx.scale(f.scale, f.scale);
+        ctx.globalAlpha = f.opacity;
+        ctx.fillStyle = f.color;
+        for(let i=0; i<5; i++) {
+            ctx.rotate(Math.PI * 2 / 5);
+            ctx.beginPath();
+            ctx.ellipse(0, 15, 5, 15, 0, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.restore();
+    });
+    
+    particles.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        if(p.life <= 0) particles.splice(i, 1);
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+}
+
+function drawInfiniteBackground(phase, time, camY, opacity) {
+    if (opacity <= 0) return;
+    
+    ctx.save();
+    ctx.globalAlpha = 0.1 * opacity; // Multiply base alpha by fade opacity
+    ctx.fillStyle = '#fff';
+    let breath = Math.sin(time / 1000) * 10;
+    
+    let baseY = Math.floor(camY / 1000) * 1000;
+    
+    // Draw decorations repeatedly along Y axis
+    // Increased range to prevent pop-in on tall screens or fast movement
+    for(let i=-1; i<=3; i++) {
+        let yPos = -(baseY + i*1000); 
+        
+        ctx.save();
+        ctx.translate(0, yPos);
+        
+        if (phase === 0) { 
+            // Rocks
+            ctx.beginPath();
+            ctx.moveTo(-500, 0);
+            ctx.lineTo(500, 0);
+            ctx.lineTo(300, -200 + breath);
+            ctx.lineTo(0, -100);
+            ctx.lineTo(-300, -250 + breath);
+            ctx.fill();
+        } else if (phase === 1) { 
+            // Pillars
+            ctx.fillRect(-300, -300 + breath, 50, 600);
+            ctx.fillRect(200, -500 - breath, 80, 800);
+        } else if (phase === 2) { 
+            // Clouds
+            ctx.beginPath();
+            ctx.arc(-200, -100 + breath, 50, 0, Math.PI*2);
+            ctx.arc(300, -150 - breath, 70, 0, Math.PI*2);
+            ctx.fill();
+        } else if (phase === 3) { 
+            // Stars
+            for(let k=0; k<10; k++) {
+                 ctx.fillRect((k*100)%600 - 300, -(k*50)%500, 2, 2);
+            }
+        }
+        ctx.restore();
+    }
+    
+    ctx.restore();
+}
+
+let rainDrops = [];
+function drawRain(time, camY, camX, opacity) {
+    if (Math.random() > 0.5) {
+        // Rain spawns relative to camera
+        rainDrops.push({
+            x: camX + (Math.random() - 0.5) * width * 1.5,
+            y: camY + height, // Start above screen
+            len: 20 + Math.random() * 20,
+            speed: 15 + Math.random() * 10
+        });
+    }
+    
+    ctx.save();
+    ctx.strokeStyle = `rgba(174, 194, 224, ${0.3 * opacity})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = rainDrops.length - 1; i >= 0; i--) {
+        let r = rainDrops[i];
+        r.y -= r.speed; // Rain falls DOWN (Y decreases in world space)
+        
+        ctx.moveTo(r.x, -r.y);
+        ctx.lineTo(r.x, -(r.y - r.len));
+        
+        if (r.y < camY - height) rainDrops.splice(i, 1);
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+function spawnParticles(x, y, count, color) {
+    for(let i=0; i<count; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            life: 1.0,
+            color: color
+        });
+    }
+}
+</script>
+</body>
+</html>
